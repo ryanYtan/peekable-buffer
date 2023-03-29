@@ -102,6 +102,102 @@ impl<'a, T> PeekableStream<'a, T> for Stream<T>
 
     fn shift(&'a mut self, offset: i32) -> () {
         let i = self.compute_bounded_offset(offset);
-        *self.ctr.borrow_mut() = i as usize;
+        *self.ctr.borrow_mut() = if i == -1 {
+            0
+        } else {
+            i as usize
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lookaround_peek() {
+        let elems = vec![1, 2, 3];
+        let mut stream = Stream::new(&elems);
+
+        assert_eq!(stream.size(), 3);
+
+        // pointer at position 0
+        assert!(!stream.is_at_end());
+        assert_eq!(stream.peek(), Some(&1));
+        assert_eq!(stream.lookaround(-1), None);
+        assert_eq!(stream.lookaround(0), Some(&1));
+        assert_eq!(stream.lookaround(1), Some(&2));
+        assert_eq!(stream.lookaround(2), Some(&3));
+        assert_eq!(stream.lookaround(3), None);
+        assert_eq!(stream.lookaround(4), None);
+
+        assert!(!stream.is_at_end());
+        assert_eq!(stream.peek(), Some(&1));
+
+        // pointer at position 1
+        stream.advance();
+        stream.shift(-1);
+        stream.shift(1);
+        assert!(!stream.is_at_end());
+        assert_eq!(stream.peek(), Some(&2));
+        assert_eq!(stream.lookaround(-2), None);
+        assert_eq!(stream.lookaround(-1), Some(&1));
+        assert_eq!(stream.lookaround(0), Some(&2));
+        assert_eq!(stream.lookaround(1), Some(&3));
+        assert_eq!(stream.lookaround(2), None);
+        assert_eq!(stream.lookaround(3), None);
+
+        assert!(!stream.is_at_end());
+        assert_eq!(stream.peek(), Some(&2));
+    }
+
+    #[test]
+    fn test_shifting() {
+        fn limit(stream: &mut Stream<i32>) {
+            let offset_from_end = *stream.ctr.borrow_mut() as i32 - stream.size() as i32;
+
+            // shift right
+            stream.shift(i32::MAX);
+            assert!(stream.is_at_end());
+            assert_eq!(stream.peek(), None);
+            stream.shift(-2);
+            assert_eq!(stream.peek(), Some(&2));
+
+            // shift left
+            assert!(!stream.is_at_end());
+            stream.shift(i32::MIN);
+            assert!(!stream.is_at_end());
+            assert_eq!(stream.peek(), Some(&1));
+            stream.shift(1);
+            assert_eq!(stream.peek(), Some(&2));
+
+            // reset to original position
+            stream.shift(i32::MAX);
+            stream.shift(offset_from_end as i32);
+        }
+
+        let elems = vec![1, 2, 3];
+        let mut stream = Stream::new(&elems);
+
+        assert_eq!(stream.size(), 3);
+
+        for _i in 1..=4 {
+            limit(&mut stream);
+            stream.advance();
+        }
+    }
+
+    #[test]
+    fn test_consume() {
+        let elems = vec![1, 2, 3];
+        let mut stream = Stream::new(&elems);
+
+        assert_eq!(stream.size(), 3);
+
+        assert_eq!(stream.consume(), Some(&1));
+        assert_eq!(stream.consume(), Some(&2));
+        assert_eq!(stream.consume(), Some(&3));
+        assert_eq!(stream.consume(), None);
+        assert_eq!(stream.consume(), None);
     }
 }
