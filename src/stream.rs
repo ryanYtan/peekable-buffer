@@ -1,6 +1,20 @@
 pub trait PeekableStream<'a, T> {
+    /// Returns true if the stream has reached the end.
     fn is_at_end(&'a self) -> bool;
+
+    /// Returns the number of elements in the stream.
+    fn size(&'a self) -> usize;
+
+    /// Returns a reference to the element `offset` positions away from the
+    /// element currently being pointed to by the stream pointer. If the
+    /// computed offset is outside the bounds of the stream, `None` is returned.
     fn lookaround(&'a self, offset: i32) -> Option<&'a T>;
+
+    /// Shifts the stream pointer by `offset` positions. The computed offset
+    /// will be within the range `[0, size()]`. If the computed offset is less
+    /// than 0, the stream pointer will point to the first element. If the
+    /// computed offset is greater than `size() - 1`, the stream pointer will
+    /// point to the end and `is_at_end()` returns true.
     fn shift(&'a mut self, offset: i32) -> ();
 }
 
@@ -16,6 +30,7 @@ pub struct Stream<T>
 impl<'a, T> Stream<T>
     where T: Clone
 {
+    /// Creates a `Stream` object that owns all elements of `&[T]` via cloning.
     pub fn new(elements: &[T]) -> Self {
         Self {
             iter: elements.iter().cloned().collect(),
@@ -23,23 +38,30 @@ impl<'a, T> Stream<T>
         }
     }
 
-    pub fn size(&'a self) -> usize {
-        self.iter.len()
-    }
-
+    /// A convenience method that advances the stream pointer by 1. If the
+    /// stream is at the end, no action is taken. This is equivalent to calling
+    /// `shift(1)`.
     pub fn advance(&'a mut self) -> () {
-        self.ctr = self.compute_bounded_offset(1) as usize;
+        self.shift(1);
     }
 
+    /// Returns a reference to the element currently being pointed to by the
+    /// stream pointer.
     pub fn peek(&'a self) -> Option<&'a T> {
         self.lookaround(0)
     }
 
-    //pub fn consume(&'a mut self) -> Option<&'a T> {
-    //    let tmp = self.peek();
-    //    self.advance();
-    //    tmp
-    //}
+    /// Returns a clone of the element currently being pointed to by the stream
+    /// pointer, then advances the pointer by 1. If a clone is not desired,
+    /// it is recommended to call `peek()` followed by `advance()` manually.
+    pub fn consume(&'a mut self) -> Option<T> {
+        let tmp = match self.peek() {
+            Some(v) => Some(v.clone()),
+            None => None,
+        };
+        self.advance();
+        tmp
+    }
 
     /// Computes current stream pointer position offset by integer `offset`
     /// amount, returning the new position in the range `[-1, size()]`.
@@ -62,6 +84,11 @@ impl<'a, T> PeekableStream<'a, T> for Stream<T>
     fn is_at_end(&'a self) -> bool {
         self.ctr >= self.iter.len()
     }
+
+    fn size(&'a self) -> usize {
+        self.iter.len()
+    }
+
 
     fn lookaround(&'a self, offset: i32) -> Option<&'a T> {
         let i = self.compute_bounded_offset(offset);
