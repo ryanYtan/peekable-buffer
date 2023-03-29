@@ -1,23 +1,23 @@
 use std::{cell::RefCell, rc::Rc};
 
-pub trait PeekableStream<'a, T> {
+pub trait PeekableStream<T> {
     /// Returns true if the stream has reached the end.
-    fn is_at_end(&'a self) -> bool;
+    fn is_at_end(&self) -> bool;
 
     /// Returns the number of elements in the stream.
-    fn size(&'a self) -> usize;
+    fn size(&self) -> usize;
 
     /// Returns a reference to the element `offset` positions away from the
     /// element currently being pointed to by the stream pointer. If the
     /// computed offset is outside the bounds of the stream, `None` is returned.
-    fn lookaround(&'a self, offset: i32) -> Option<&'a T>;
+    fn lookaround(&self, offset: i32) -> Option<&T>;
 
     /// Shifts the stream pointer by `offset` positions. The computed offset
     /// will be within the range `[0, size()]`. If the computed offset is less
     /// than 0, the stream pointer will point to the first element. If the
     /// computed offset is greater than `size() - 1`, the stream pointer will
     /// point to the end and `is_at_end()` returns true.
-    fn shift(&'a mut self, offset: i32) -> ();
+    fn shift(&mut self, offset: i32) -> ();
 }
 
 
@@ -29,7 +29,7 @@ pub struct Stream<T>
     ctr: Rc<RefCell<usize>>,
 }
 
-impl<'a, T> Stream<T>
+impl<T> Stream<T>
     where T: Clone
 {
     /// Creates a `Stream` object that owns all elements of `&[T]` via cloning.
@@ -43,19 +43,19 @@ impl<'a, T> Stream<T>
     /// A convenience method that advances the stream pointer by 1. If the
     /// stream is at the end, no action is taken. This is equivalent to calling
     /// `shift(1)`.
-    pub fn advance(&'a mut self) -> () {
+    pub fn advance(&mut self) -> () {
         self.shift(1);
     }
 
     /// Returns a reference to the element currently being pointed to by the
     /// stream pointer.
-    pub fn peek(&'a self) -> Option<&'a T> {
+    pub fn peek(&self) -> Option<&T> {
         self.lookaround(0)
     }
 
     /// Returns a reference to the element currently being pointed to by the
     /// stream pointer, then advances the pointer by 1.
-    pub fn consume(&'a mut self) -> Option<&'a T> {
+    pub fn consume(&mut self) -> Option<&T> {
         let tmp = self.peek();
         *self.ctr.borrow_mut() += 1;
         if *self.ctr.borrow_mut() >= self.size() {
@@ -79,19 +79,19 @@ impl<'a, T> Stream<T>
     }
 }
 
-impl<'a, T> PeekableStream<'a, T> for Stream<T>
+impl<T> PeekableStream<T> for Stream<T>
     where T: Clone
 {
-    fn is_at_end(&'a self) -> bool {
+    fn is_at_end(&self) -> bool {
         *self.ctr.borrow_mut() >= self.iter.len()
     }
 
-    fn size(&'a self) -> usize {
+    fn size(&self) -> usize {
         self.iter.len()
     }
 
 
-    fn lookaround(&'a self, offset: i32) -> Option<&'a T> {
+    fn lookaround(&self, offset: i32) -> Option<&T> {
         let i = self.compute_bounded_offset(offset);
         if i < 0 || self.size() <= i as usize {
             None
@@ -100,7 +100,7 @@ impl<'a, T> PeekableStream<'a, T> for Stream<T>
         }
     }
 
-    fn shift(&'a mut self, offset: i32) -> () {
+    fn shift(&mut self, offset: i32) -> () {
         let i = self.compute_bounded_offset(offset);
         *self.ctr.borrow_mut() = if i == -1 {
             0
