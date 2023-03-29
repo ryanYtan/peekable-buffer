@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 pub trait PeekableStream<'a, T> {
     /// Returns true if the stream has reached the end.
     fn is_at_end(&'a self) -> bool;
@@ -24,7 +26,7 @@ pub struct Stream<T>
     where T: Clone
 {
     iter: Vec<T>,
-    ctr: usize,
+    ctr: Rc<RefCell<usize>>,
 }
 
 impl<'a, T> Stream<T>
@@ -34,7 +36,7 @@ impl<'a, T> Stream<T>
     pub fn new(elements: &[T]) -> Self {
         Self {
             iter: elements.iter().cloned().collect(),
-            ctr: 0,
+            ctr: Rc::new(RefCell::new(0)),
         }
     }
 
@@ -51,15 +53,14 @@ impl<'a, T> Stream<T>
         self.lookaround(0)
     }
 
-    /// Returns a clone of the element currently being pointed to by the stream
-    /// pointer, then advances the pointer by 1. If a clone is not desired,
-    /// it is recommended to call `peek()` followed by `advance()` manually.
-    pub fn consume(&'a mut self) -> Option<T> {
-        let tmp = match self.peek() {
-            Some(v) => Some(v.clone()),
-            None => None,
-        };
-        self.advance();
+    /// Returns a reference to the element currently being pointed to by the
+    /// stream pointer, then advances the pointer by 1.
+    pub fn consume(&'a mut self) -> Option<&'a T> {
+        let tmp = self.peek();
+        *self.ctr.borrow_mut() += 1;
+        if *self.ctr.borrow_mut() >= self.size() {
+            *self.ctr.borrow_mut() = self.size(); //just in case
+        }
         tmp
     }
 
@@ -69,7 +70,7 @@ impl<'a, T> Stream<T>
     /// Note: this function makes the assumption that `i128` contains the range
     /// `[-usize, usize]`.
     fn compute_bounded_offset(&self, offset: i32) -> i128 {
-        let curr: i128 = self.ctr as i128 + offset as i128; //so no over/underflow
+        let curr: i128 = *self.ctr.borrow_mut() as i128 + offset as i128; //so no over/underflow
         if offset < 0 {
             std::cmp::max(-1, curr)
         } else {
@@ -82,7 +83,7 @@ impl<'a, T> PeekableStream<'a, T> for Stream<T>
     where T: Clone
 {
     fn is_at_end(&'a self) -> bool {
-        self.ctr >= self.iter.len()
+        *self.ctr.borrow_mut() >= self.iter.len()
     }
 
     fn size(&'a self) -> usize {
@@ -101,6 +102,6 @@ impl<'a, T> PeekableStream<'a, T> for Stream<T>
 
     fn shift(&'a mut self, offset: i32) -> () {
         let i = self.compute_bounded_offset(offset);
-        self.ctr = i as usize;
+        *self.ctr.borrow_mut() = i as usize;
     }
 }
