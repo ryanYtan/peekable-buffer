@@ -40,6 +40,12 @@ impl<T> Stream<T>
         }
     }
 
+    /// Returns the current zero-indexed position of the stream pointer. The
+    /// returned value is in the range `[0, size()]`.
+    pub fn pos(&self) -> usize {
+        *self.ctr.borrow_mut()
+    }
+
     /// A convenience method that advances the stream pointer by 1. If the
     /// stream is at the end, no action is taken. This is equivalent to calling
     /// `shift(1)`.
@@ -123,6 +129,7 @@ mod tests {
 
         // pointer at position 0
         assert!(!stream.is_at_end());
+        assert_eq!(stream.pos(), 0);
         assert_eq!(stream.peek(), Some(&1));
         assert_eq!(stream.lookaround(-1), None);
         assert_eq!(stream.lookaround(0), Some(&1));
@@ -136,8 +143,11 @@ mod tests {
 
         // pointer at position 1
         stream.advance();
+        assert_eq!(stream.pos(), 1);
         stream.shift(-1);
+        assert_eq!(stream.pos(), 0);
         stream.shift(1);
+        assert_eq!(stream.pos(), 1);
         assert!(!stream.is_at_end());
         assert_eq!(stream.peek(), Some(&2));
         assert_eq!(stream.lookaround(-2), None);
@@ -158,6 +168,7 @@ mod tests {
 
             // shift right
             stream.shift(i32::MAX);
+            assert_eq!(stream.pos(), 3);
             assert!(stream.is_at_end());
             assert_eq!(stream.peek(), None);
             stream.shift(-2);
@@ -166,6 +177,7 @@ mod tests {
             // shift left
             assert!(!stream.is_at_end());
             stream.shift(i32::MIN);
+            assert_eq!(stream.pos(), 0);
             assert!(!stream.is_at_end());
             assert_eq!(stream.peek(), Some(&1));
             stream.shift(1);
@@ -181,7 +193,8 @@ mod tests {
 
         assert_eq!(stream.size(), 3);
 
-        for _i in 1..=4 {
+        for i in 1..=4 {
+            assert_eq!(stream.pos(), (i - 1) as usize);
             limit(&mut stream);
             stream.advance();
         }
@@ -194,10 +207,16 @@ mod tests {
 
         assert_eq!(stream.size(), 3);
 
+        assert_eq!(stream.pos(), 0);
         assert_eq!(stream.consume(), Some(&1));
+        assert_eq!(stream.pos(), 1);
         assert_eq!(stream.consume(), Some(&2));
+        assert_eq!(stream.pos(), 2);
         assert_eq!(stream.consume(), Some(&3));
+        assert_eq!(stream.pos(), 3);
         assert_eq!(stream.consume(), None);
+        assert_eq!(stream.pos(), 3);
         assert_eq!(stream.consume(), None);
+        assert_eq!(stream.pos(), 3);
     }
 }
