@@ -54,15 +54,22 @@ impl<T> Stream<T>
     }
 
     /// Returns a reference to the element currently being pointed to by the
-    /// stream pointer.
-    pub fn peek(&self) -> Option<&T> {
+    /// stream pointer. This is equivalent to calling `lookaround(0)`.
+    pub fn current(&self) -> Option<&T> {
         self.lookaround(0)
+    }
+
+    /// Returns a reference to the element just after the element currently
+    /// being pointed to by the stream pointer. This is equivalent to calling
+    /// `lookaround(1)`.
+    pub fn peek(&self) -> Option<&T> {
+        self.lookaround(1)
     }
 
     /// Returns a reference to the element currently being pointed to by the
     /// stream pointer, then advances the pointer by 1.
     pub fn consume(&mut self) -> Option<&T> {
-        let tmp = self.peek();
+        let tmp = self.current();
         *self.ctr.borrow_mut() += 1;
         if *self.ctr.borrow_mut() >= self.size() {
             *self.ctr.borrow_mut() = self.size(); //just in case
@@ -96,7 +103,6 @@ impl<T> PeekableStream<T> for Stream<T>
         self.iter.len()
     }
 
-
     fn lookaround(&self, offset: i32) -> Option<&T> {
         let i = self.compute_bounded_offset(offset);
         if i < 0 || self.size() <= i as usize {
@@ -121,7 +127,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_lookaround_peek() {
+    fn test_lookaround_peek_current() {
         let elems = vec![1, 2, 3];
         let mut stream = Stream::new(&elems);
 
@@ -130,7 +136,8 @@ mod tests {
         // pointer at position 0
         assert!(!stream.is_at_end());
         assert_eq!(stream.pos(), 0);
-        assert_eq!(stream.peek(), Some(&1));
+        assert_eq!(stream.current(), Some(&1));
+        assert_eq!(stream.peek(), Some(&2));
         assert_eq!(stream.lookaround(-1), None);
         assert_eq!(stream.lookaround(0), Some(&1));
         assert_eq!(stream.lookaround(1), Some(&2));
@@ -139,17 +146,21 @@ mod tests {
         assert_eq!(stream.lookaround(4), None);
 
         assert!(!stream.is_at_end());
-        assert_eq!(stream.peek(), Some(&1));
+        assert_eq!(stream.current(), Some(&1));
 
         // pointer at position 1
         stream.advance();
         assert_eq!(stream.pos(), 1);
+        assert_eq!(stream.peek(), Some(&3));
         stream.shift(-1);
         assert_eq!(stream.pos(), 0);
+        assert_eq!(stream.peek(), Some(&2));
         stream.shift(1);
         assert_eq!(stream.pos(), 1);
+        assert_eq!(stream.peek(), Some(&3));
         assert!(!stream.is_at_end());
-        assert_eq!(stream.peek(), Some(&2));
+        assert_eq!(stream.current(), Some(&2));
+        assert_eq!(stream.peek(), Some(&3));
         assert_eq!(stream.lookaround(-2), None);
         assert_eq!(stream.lookaround(-1), Some(&1));
         assert_eq!(stream.lookaround(0), Some(&2));
@@ -158,7 +169,7 @@ mod tests {
         assert_eq!(stream.lookaround(3), None);
 
         assert!(!stream.is_at_end());
-        assert_eq!(stream.peek(), Some(&2));
+        assert_eq!(stream.current(), Some(&2));
     }
 
     #[test]
@@ -170,18 +181,18 @@ mod tests {
             stream.shift(i32::MAX);
             assert_eq!(stream.pos(), 3);
             assert!(stream.is_at_end());
-            assert_eq!(stream.peek(), None);
+            assert_eq!(stream.current(), None);
             stream.shift(-2);
-            assert_eq!(stream.peek(), Some(&2));
+            assert_eq!(stream.current(), Some(&2));
 
             // shift left
             assert!(!stream.is_at_end());
             stream.shift(i32::MIN);
             assert_eq!(stream.pos(), 0);
             assert!(!stream.is_at_end());
-            assert_eq!(stream.peek(), Some(&1));
+            assert_eq!(stream.current(), Some(&1));
             stream.shift(1);
-            assert_eq!(stream.peek(), Some(&2));
+            assert_eq!(stream.current(), Some(&2));
 
             // reset to original position
             stream.shift(i32::MAX);
