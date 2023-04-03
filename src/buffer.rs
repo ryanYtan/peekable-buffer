@@ -1,35 +1,14 @@
 use std::{cell::RefCell, rc::Rc};
 
-pub trait PeekableStream<T> {
-    /// Returns true if the stream has reached the end.
-    fn is_at_end(&self) -> bool;
-
-    /// Returns the number of elements in the stream.
-    fn size(&self) -> usize;
-
-    /// Returns a reference to the element `offset` positions away from the
-    /// element currently being pointed to by the stream pointer. If the
-    /// computed offset is outside the bounds of the stream, `None` is returned.
-    fn lookaround(&self, offset: i32) -> Option<&T>;
-
-    /// Shifts the stream pointer by `offset` positions. The computed offset
-    /// will be within the range `[0, size()]`. If the computed offset is less
-    /// than 0, the stream pointer will point to the first element. If the
-    /// computed offset is greater than `size() - 1`, the stream pointer will
-    /// point to the end and `is_at_end()` returns true.
-    fn shift(&mut self, offset: i32) -> ();
-}
-
-
 #[derive(Debug)]
-pub struct Stream<T>
+pub struct PeekableBuffer<T>
     where T: Clone
 {
     iter: Vec<T>,
     ctr: Rc<RefCell<usize>>,
 }
 
-impl<T> Stream<T>
+impl<T> PeekableBuffer<T>
     where T: Clone
 {
     /// Creates a `Stream` object that owns all elements of `&[T]` via cloning.
@@ -37,6 +16,43 @@ impl<T> Stream<T>
         Self {
             iter: elements.iter().cloned().collect(),
             ctr: Rc::new(RefCell::new(0)),
+        }
+    }
+
+    /// Returns true if the stream has reached the end.
+    pub fn is_at_end(&self) -> bool {
+        let borrowed_ctr = self.ctr.borrow();
+        *borrowed_ctr >= self.iter.len()
+    }
+
+    /// Returns the number of elements in the stream.
+    pub fn size(&self) -> usize {
+        self.iter.len()
+    }
+
+    /// Returns a reference to the element `offset` positions away from the
+    /// element currently being pointed to by the stream pointer. If the
+    /// computed offset is outside the bounds of the stream, `None` is returned.
+    pub fn lookaround(&self, offset: i32) -> Option<&T> {
+        let i = self.compute_bounded_offset(offset);
+        if i < 0 || self.size() <= i as usize {
+            None
+        } else {
+            Some(&(self.iter[i as usize]))
+        }
+    }
+
+    /// Shifts the stream pointer by `offset` positions. The computed offset
+    /// will be within the range `[0, size()]`. If the computed offset is less
+    /// than 0, the stream pointer will point to the first element. If the
+    /// computed offset is greater than `size() - 1`, the stream pointer will
+    /// point to the end and `is_at_end()` returns true.
+    pub fn shift(&mut self, offset: i32) -> () {
+        let i = self.compute_bounded_offset(offset);
+        *self.ctr.borrow_mut() = if i == -1 {
+            0
+        } else {
+            i as usize
         }
     }
 
@@ -109,37 +125,6 @@ impl<T> Stream<T>
     }
 }
 
-impl<T> PeekableStream<T> for Stream<T>
-    where T: Clone
-{
-    fn is_at_end(&self) -> bool {
-        let borrowed_ctr = self.ctr.borrow();
-        *borrowed_ctr >= self.iter.len()
-    }
-
-    fn size(&self) -> usize {
-        self.iter.len()
-    }
-
-    fn lookaround(&self, offset: i32) -> Option<&T> {
-        let i = self.compute_bounded_offset(offset);
-        if i < 0 || self.size() <= i as usize {
-            None
-        } else {
-            Some(&(self.iter[i as usize]))
-        }
-    }
-
-    fn shift(&mut self, offset: i32) -> () {
-        let i = self.compute_bounded_offset(offset);
-        *self.ctr.borrow_mut() = if i == -1 {
-            0
-        } else {
-            i as usize
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,7 +132,7 @@ mod tests {
     #[test]
     fn test_lookaround_peek_current() {
         let elems = vec![1, 2, 3];
-        let mut stream = Stream::new(&elems);
+        let mut stream = PeekableBuffer::new(&elems);
 
         assert_eq!(stream.size(), 3);
 
@@ -192,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_shifting() {
-        fn limit(stream: &mut Stream<i32>) {
+        fn limit(stream: &mut PeekableBuffer<i32>) {
             let offset_from_end = *stream.ctr.borrow_mut() as i32 - stream.size() as i32;
 
             // shift right
@@ -218,7 +203,7 @@ mod tests {
         }
 
         let elems = vec![1, 2, 3];
-        let mut stream = Stream::new(&elems);
+        let mut stream = PeekableBuffer::new(&elems);
 
         assert_eq!(stream.size(), 3);
 
@@ -232,7 +217,7 @@ mod tests {
     #[test]
     fn test_consume() {
         let elems = vec![1, 2, 3];
-        let mut stream = Stream::new(&elems);
+        let mut stream = PeekableBuffer::new(&elems);
 
         assert_eq!(stream.size(), 3);
 
@@ -252,7 +237,7 @@ mod tests {
     #[test]
     fn test_take_while_consumes_part_of_stream() {
         let elems = vec![1, 2, 3, 3, 4, 5];
-        let mut stream = Stream::new(&elems);
+        let mut stream = PeekableBuffer::new(&elems);
 
         assert_eq!(stream.size(), 6);
 
@@ -268,7 +253,7 @@ mod tests {
     #[test]
     fn test_take_while_predicate_consumes_entire_stream() {
         let elems = vec![1, 2, 3, 4, 5];
-        let mut stream = Stream::new(&elems);
+        let mut stream = PeekableBuffer::new(&elems);
 
         assert_eq!(stream.size(), 5);
 
@@ -285,7 +270,7 @@ mod tests {
     #[test]
     fn test_take_while_predicate_consumes_no_elements() {
         let elems = vec![1, 2, 3, 4, 5];
-        let mut stream = Stream::new(&elems);
+        let mut stream = PeekableBuffer::new(&elems);
 
         assert_eq!(stream.size(), 5);
 
