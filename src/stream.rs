@@ -70,11 +70,28 @@ impl<T> Stream<T>
     /// stream pointer, then advances the pointer by 1.
     pub fn consume(&mut self) -> Option<&T> {
         let tmp = self.current();
-        *self.ctr.borrow_mut() += 1;
-        if *self.ctr.borrow_mut() >= self.size() {
-            *self.ctr.borrow_mut() = self.size(); //just in case
+        let mut mctr = self.ctr.borrow_mut();
+        *mctr += 1;
+        if *mctr >= self.size() {
+            *mctr = self.size(); //just in case
         }
         tmp
+    }
+
+    /// Returns an iterator containing elements that satisfy the given
+    /// predicate, starting from the element currently pointed to by the stream
+    /// pointer, up to either the end of the stream, or when the predicate
+    /// returns fall, whichever comes first.
+    pub fn take_while<P>(&mut self, predicate: P) -> impl Iterator<Item = &T>
+        where P: Fn(&T) -> bool
+    {
+        let mut v = Vec::new();
+        let mut mctr = self.ctr.borrow_mut();
+        while *mctr < self.iter.len() && predicate(&self.iter[*mctr]) {
+            v.push(&self.iter[*mctr]);
+            *mctr += 1;
+        }
+        v.into_iter()
     }
 
     /// Computes current stream pointer position offset by integer `offset`
@@ -96,7 +113,8 @@ impl<T> PeekableStream<T> for Stream<T>
     where T: Clone
 {
     fn is_at_end(&self) -> bool {
-        *self.ctr.borrow_mut() >= self.iter.len()
+        let borrowed_ctr = self.ctr.borrow();
+        *borrowed_ctr >= self.iter.len()
     }
 
     fn size(&self) -> usize {
@@ -229,5 +247,57 @@ mod tests {
         assert_eq!(stream.pos(), 3);
         assert_eq!(stream.consume(), None);
         assert_eq!(stream.pos(), 3);
+    }
+
+    #[test]
+    fn test_take_while_consumes_part_of_stream() {
+        let elems = vec![1, 2, 3, 3, 4, 5];
+        let mut stream = Stream::new(&elems);
+
+        assert_eq!(stream.size(), 6);
+
+        let taken: Vec<&i32> = stream.take_while(|&i| i < 4).collect();
+        assert_eq!(taken, vec![&1, &2, &3, &3]);
+
+        assert_eq!(stream.pos(), 4);
+        assert!(!stream.is_at_end());
+        assert_eq!(stream.current(), Some(&4));
+        assert_eq!(stream.peek(), Some(&5));
+    }
+
+    #[test]
+    fn test_take_while_predicate_consumes_entire_stream() {
+        let elems = vec![1, 2, 3, 4, 5];
+        let mut stream = Stream::new(&elems);
+
+        assert_eq!(stream.size(), 5);
+
+        let taken: Vec<&i32> = stream.take_while(|&i| i < 10).collect();
+        assert_eq!(taken, vec![&1, &2, &3, &4, &5]);
+
+        assert_eq!(stream.pos(), 5);
+        assert!(stream.is_at_end());
+        assert_eq!(stream.current(), None);
+        assert_eq!(stream.peek(), None);
+        assert_eq!(stream.lookaround(-1), Some(&5));
+    }
+
+    #[test]
+    fn test_take_while_predicate_consumes_no_elements() {
+        let elems = vec![1, 2, 3, 4, 5];
+        let mut stream = Stream::new(&elems);
+
+        assert_eq!(stream.size(), 5);
+
+        // at position 1
+        stream.advance();
+
+        let taken: Vec<&i32> = stream.take_while(|&i| i == 1).collect();
+        assert!(taken.is_empty());
+
+        assert_eq!(stream.pos(), 1);
+        assert!(!stream.is_at_end());
+        assert_eq!(stream.current(), Some(&2));
+        assert_eq!(stream.peek(), Some(&3));
     }
 }
