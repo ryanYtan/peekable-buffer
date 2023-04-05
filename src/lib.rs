@@ -110,6 +110,24 @@ impl<T> PeekableBuffer<T>
         v.into_iter()
     }
 
+    /// Returns an iterator containing all elements in the range
+    /// `[pos(), pos() + nelems)`. The stream pointer will point to either the
+    /// end of the stream, or the element at `pos() + nelems`, whichever is
+    /// first. If `pos() + nelems` is outside the bounds of the stream, then
+    /// the rest of the stream is consumed and `is_at_end()` returns true.
+    pub fn take_n(&mut self, nelems: u32) -> impl Iterator<Item = &T> {
+        let mut v = Vec::new();
+        let mut mctr = self.ctr.borrow_mut();
+        for _ in 0..nelems {
+            if *mctr >= self.iter.len() {
+                break;
+            }
+            v.push(&self.iter[*mctr]);
+            *mctr += 1;
+        }
+        v.into_iter()
+    }
+
     /// Computes current stream pointer position offset by integer `offset`
     /// amount, returning the new position in the range `[-1, size()]`.
     ///
@@ -284,5 +302,48 @@ mod tests {
         assert!(!stream.is_at_end());
         assert_eq!(stream.current(), Some(&2));
         assert_eq!(stream.peek(), Some(&3));
+    }
+
+    #[test]
+    fn test_take_n() {
+        let elems = vec![1, 2, 3, 4, 5];
+        let mut stream = PeekableBuffer::new(&elems);
+        assert_eq!(stream.size(), 5);
+
+        {
+            let taken: Vec<&i32> = stream.take_n(0).collect();
+            assert!(taken.is_empty());
+            assert_eq!(taken, Vec::<&i32>::new());
+            assert!(stream.pos() == 0);
+            assert!(!stream.is_at_end());
+        }
+        {
+            let taken: Vec<&i32> = stream.take_n(2).collect();
+            assert!(!taken.is_empty());
+            assert_eq!(taken, vec![&1, &2]);
+            assert!(stream.pos() == 2);
+            assert!(!stream.is_at_end());
+        }
+        {
+            let taken: Vec<&i32> = stream.take_n(2).collect();
+            assert!(!taken.is_empty());
+            assert_eq!(taken, vec![&3, &4]);
+            assert!(stream.pos() == 4);
+            assert!(!stream.is_at_end());
+        }
+        {
+            let taken: Vec<&i32> = stream.take_n(2).collect();
+            assert!(!taken.is_empty());
+            assert_eq!(taken, vec![&5]);
+            assert!(stream.pos() == 5);
+            assert!(stream.is_at_end());
+        }
+        {
+            let taken: Vec<&i32> = stream.take_n(10).collect();
+            assert!(taken.is_empty());
+            assert_eq!(taken, Vec::<&i32>::new());
+            assert!(stream.pos() == 5);
+            assert!(stream.is_at_end());
+        }
     }
 }
