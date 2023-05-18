@@ -8,13 +8,26 @@ pub struct PeekableBuffer<T>
     ctr: Rc<RefCell<usize>>,
 }
 
+impl<T> IntoIterator for PeekableBuffer<T>
+    where T: Clone
+{
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter.into_iter()
+    }
+}
+
 impl<T> PeekableBuffer<T>
     where T: Clone
 {
     /// Creates a `Stream` object that owns all elements of `&[T]` via cloning.
-    pub fn new(elements: &[T]) -> Self {
+    pub fn new<E>(elements: E) -> Self
+        where E: AsRef<[T]>
+    {
         Self {
-            iter: elements.iter().cloned().collect(),
+            iter: elements.as_ref().iter().cloned().collect(),
             ctr: Rc::new(RefCell::new(0)),
         }
     }
@@ -33,7 +46,7 @@ impl<T> PeekableBuffer<T>
     /// Returns a reference to the element `offset` positions away from the
     /// element currently being pointed to by the stream pointer. If the
     /// computed offset is outside the bounds of the stream, `None` is returned.
-    pub fn lookaround(&self, offset: i32) -> Option<&T> {
+    pub fn lookaround(&self, offset: i64) -> Option<&T> {
         let i = self.compute_bounded_offset(offset);
         if i < 0 || self.size() <= i as usize {
             None
@@ -47,7 +60,7 @@ impl<T> PeekableBuffer<T>
     /// than 0, the stream pointer will point to the first element. If the
     /// computed offset is greater than `size() - 1`, the stream pointer will
     /// point to the end and `is_at_end()` returns true.
-    pub fn shift(&mut self, offset: i32) -> () {
+    pub fn shift(&mut self, offset: i64) -> () {
         let i = self.compute_bounded_offset(offset);
         *self.ctr.borrow_mut() = if i == -1 {
             0
@@ -115,7 +128,7 @@ impl<T> PeekableBuffer<T>
     /// end of the stream, or the element at `pos() + nelems`, whichever is
     /// first. If `pos() + nelems` is outside the bounds of the stream, then
     /// the rest of the stream is consumed and `is_at_end()` returns true.
-    pub fn take_n(&mut self, nelems: u32) -> impl Iterator<Item = &T> {
+    pub fn take_n(&mut self, nelems: u64) -> impl Iterator<Item = &T> {
         let mut v = Vec::new();
         let mut mctr = self.ctr.borrow_mut();
         for _ in 0..nelems {
@@ -133,7 +146,7 @@ impl<T> PeekableBuffer<T>
     ///
     /// Note: this function makes the assumption that `i128` contains the range
     /// `[-usize, usize]`.
-    fn compute_bounded_offset(&self, offset: i32) -> i128 {
+    fn compute_bounded_offset(&self, offset: i64) -> i128 {
         let curr: i128 = *self.ctr.borrow_mut() as i128 + offset as i128; //so no over/underflow
         if offset < 0 {
             std::cmp::max(-1, curr)
@@ -195,11 +208,11 @@ mod tests {
 
     #[test]
     fn test_shifting() {
-        fn limit(stream: &mut PeekableBuffer<i32>) {
-            let offset_from_end = *stream.ctr.borrow_mut() as i32 - stream.size() as i32;
+        fn limit(stream: &mut PeekableBuffer<i64>) {
+            let offset_from_end = *stream.ctr.borrow_mut() as i64 - stream.size() as i64;
 
             // shift right
-            stream.shift(i32::MAX);
+            stream.shift(i64::MAX);
             assert_eq!(stream.pos(), 3);
             assert!(stream.is_at_end());
             assert_eq!(stream.current(), None);
@@ -208,7 +221,7 @@ mod tests {
 
             // shift left
             assert!(!stream.is_at_end());
-            stream.shift(i32::MIN);
+            stream.shift(i64::MIN);
             assert_eq!(stream.pos(), 0);
             assert!(!stream.is_at_end());
             assert_eq!(stream.current(), Some(&1));
@@ -216,8 +229,8 @@ mod tests {
             assert_eq!(stream.current(), Some(&2));
 
             // reset to original position
-            stream.shift(i32::MAX);
-            stream.shift(offset_from_end as i32);
+            stream.shift(i64::MAX);
+            stream.shift(offset_from_end as i64);
         }
 
         let elems = vec![1, 2, 3];
@@ -259,7 +272,7 @@ mod tests {
 
         assert_eq!(stream.size(), 6);
 
-        let taken: Vec<&i32> = stream.take_while(|&i| i < 4).collect();
+        let taken: Vec<&i64> = stream.take_while(|&i| i < 4).collect();
         assert_eq!(taken, vec![&1, &2, &3, &3]);
 
         assert_eq!(stream.pos(), 4);
@@ -275,7 +288,7 @@ mod tests {
 
         assert_eq!(stream.size(), 5);
 
-        let taken: Vec<&i32> = stream.take_while(|&i| i < 10).collect();
+        let taken: Vec<&i64> = stream.take_while(|&i| i < 10).collect();
         assert_eq!(taken, vec![&1, &2, &3, &4, &5]);
 
         assert_eq!(stream.pos(), 5);
@@ -295,7 +308,7 @@ mod tests {
         // at position 1
         stream.advance();
 
-        let taken: Vec<&i32> = stream.take_while(|&i| i == 1).collect();
+        let taken: Vec<&i64> = stream.take_while(|&i| i == 1).collect();
         assert!(taken.is_empty());
 
         assert_eq!(stream.pos(), 1);
@@ -311,37 +324,37 @@ mod tests {
         assert_eq!(stream.size(), 5);
 
         {
-            let taken: Vec<&i32> = stream.take_n(0).collect();
+            let taken: Vec<&i64> = stream.take_n(0).collect();
             assert!(taken.is_empty());
-            assert_eq!(taken, Vec::<&i32>::new());
+            assert_eq!(taken, Vec::<&i64>::new());
             assert!(stream.pos() == 0);
             assert!(!stream.is_at_end());
         }
         {
-            let taken: Vec<&i32> = stream.take_n(2).collect();
+            let taken: Vec<&i64> = stream.take_n(2).collect();
             assert!(!taken.is_empty());
             assert_eq!(taken, vec![&1, &2]);
             assert!(stream.pos() == 2);
             assert!(!stream.is_at_end());
         }
         {
-            let taken: Vec<&i32> = stream.take_n(2).collect();
+            let taken: Vec<&i64> = stream.take_n(2).collect();
             assert!(!taken.is_empty());
             assert_eq!(taken, vec![&3, &4]);
             assert!(stream.pos() == 4);
             assert!(!stream.is_at_end());
         }
         {
-            let taken: Vec<&i32> = stream.take_n(2).collect();
+            let taken: Vec<&i64> = stream.take_n(2).collect();
             assert!(!taken.is_empty());
             assert_eq!(taken, vec![&5]);
             assert!(stream.pos() == 5);
             assert!(stream.is_at_end());
         }
         {
-            let taken: Vec<&i32> = stream.take_n(10).collect();
+            let taken: Vec<&i64> = stream.take_n(10).collect();
             assert!(taken.is_empty());
-            assert_eq!(taken, Vec::<&i32>::new());
+            assert_eq!(taken, Vec::<&i64>::new());
             assert!(stream.pos() == 5);
             assert!(stream.is_at_end());
         }
