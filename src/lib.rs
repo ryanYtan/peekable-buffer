@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PeekableBuffer<T>
     where T: Clone
 {
@@ -67,6 +67,15 @@ impl<T> PeekableBuffer<T>
         } else {
             i as usize
         }
+    }
+
+    /// Sets the zero-indexed position of the stream pointer. If the
+    /// given `pos` is outside of the range of the stream length, the
+    /// stream pointer will be set to `size()`.
+    pub fn set_pos(&mut self, pos: usize) -> usize {
+        let i = self.compute_bounded_offset(pos as i64);
+        *self.ctr.borrow_mut() = i as usize;
+        i as usize
     }
 
     /// Returns the current zero-indexed position of the stream pointer. The
@@ -152,6 +161,17 @@ impl<T> PeekableBuffer<T>
         } else {
             predicate(self.current().unwrap())
         }
+    }
+
+    pub fn slice_from(&self, from_inc: usize) -> PeekableBuffer<T> {
+        let f = self.compute_bounded_offset(from_inc as i64);
+        PeekableBuffer::new(&self.iter[f as usize..])
+    }
+
+    pub fn slice_between(&self, from_inc: usize, to_exc: usize) -> PeekableBuffer<T> {
+        let f = self.compute_bounded_offset(from_inc as i64);
+        let t = self.compute_bounded_offset(to_exc as i64);
+        PeekableBuffer::new(&self.iter[f as usize..t as usize])
     }
 
     /// Computes current stream pointer position offset by integer `offset`
