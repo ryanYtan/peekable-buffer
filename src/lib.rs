@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeekableBuffer<T>
     where T: Clone
 {
@@ -39,7 +39,7 @@ impl<T> PeekableBuffer<T>
     }
 
     /// Returns the number of elements in the stream.
-    pub fn size(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.iter.len()
     }
 
@@ -48,53 +48,11 @@ impl<T> PeekableBuffer<T>
     /// computed offset is outside the bounds of the stream, `None` is returned.
     pub fn lookaround(&self, offset: i64) -> Option<&T> {
         let i = self.compute_bounded_offset(offset);
-        if i < 0 || self.size() <= i as usize {
+        if i < 0 || self.len() <= i as usize {
             None
         } else {
             Some(&(self.iter[i as usize]))
         }
-    }
-
-    /// Shifts the stream pointer by `offset` positions. The computed offset
-    /// will be within the range `[0, size()]`. If the computed offset is less
-    /// than 0, the stream pointer will point to the first element. If the
-    /// computed offset is greater than `size() - 1`, the stream pointer will
-    /// point to the end and `is_at_end()` returns true.
-    pub fn shift(&mut self, offset: i64) -> () {
-        let i = self.compute_bounded_offset(offset);
-        *self.ctr.borrow_mut() = if i == -1 {
-            0
-        } else {
-            i as usize
-        }
-    }
-
-    /// Sets the zero-indexed position of the stream pointer. If the
-    /// given `pos` is outside of the range of the stream length, the
-    /// stream pointer will be set to `size()`.
-    pub fn set_pos(&mut self, pos: usize) -> usize {
-        let i = self.compute_bounded_offset(pos as i64);
-        *self.ctr.borrow_mut() = i as usize;
-        i as usize
-    }
-
-    /// Returns the current zero-indexed position of the stream pointer. The
-    /// returned value is in the range `[0, size()]`.
-    pub fn pos(&self) -> usize {
-        *self.ctr.borrow_mut()
-    }
-
-    /// A convenience method that advances the stream pointer by 1. If the
-    /// stream is at the end, no action is taken. This is equivalent to calling
-    /// `shift(1)`.
-    pub fn advance(&mut self) -> () {
-        self.shift(1);
-    }
-
-    /// Returns a reference to the element currently being pointed to by the
-    /// stream pointer. This is equivalent to calling `lookaround(0)`.
-    pub fn current(&self) -> Option<&T> {
-        self.lookaround(0)
     }
 
     /// Returns a reference to the element just after the element currently
@@ -105,13 +63,55 @@ impl<T> PeekableBuffer<T>
     }
 
     /// Returns a reference to the element currently being pointed to by the
+    /// stream pointer. This is equivalent to calling `lookaround(0)`.
+    pub fn current(&self) -> Option<&T> {
+        self.lookaround(0)
+    }
+
+    /// Shifts the stream pointer by `offset` positions. The computed offset
+    /// will be within the range `[0, len()]`. If the computed offset is less
+    /// than 0, the stream pointer will point to the first element. If the
+    /// computed offset is greater than `len() - 1`, the stream pointer will
+    /// point to the end and `is_at_end()` returns true.
+    pub fn shift(&mut self, offset: i64) -> () {
+        let i = self.compute_bounded_offset(offset);
+        *self.ctr.borrow_mut() = if i == -1 {
+            0
+        } else {
+            i as usize
+        }
+    }
+
+    /// A convenience method that advances the stream pointer by 1. If the
+    /// stream is at the end, no action is taken. This is equivalent to calling
+    /// `shift(1)`.
+    pub fn advance(&mut self) -> () {
+        self.shift(1);
+    }
+
+    /// Sets the zero-indexed position of the stream pointer. If the
+    /// given `pos` is outside of the range of the stream length, the
+    /// stream pointer will be set to `len()`.
+    pub fn set_pos(&mut self, pos: usize) -> usize {
+        let i = std::cmp::min(pos, self.iter.len());
+        *self.ctr.borrow_mut() = i;
+        i
+    }
+
+    /// Returns the current zero-indexed position of the stream pointer. The
+    /// returned value is in the range `[0, len()]`.
+    pub fn pos(&self) -> usize {
+        *self.ctr.borrow_mut()
+    }
+
+    /// Returns a reference to the element currently being pointed to by the
     /// stream pointer, then advances the pointer by 1.
     pub fn consume(&mut self) -> Option<&T> {
         let tmp = self.current();
         let mut mctr = self.ctr.borrow_mut();
         *mctr += 1;
-        if *mctr >= self.size() {
-            *mctr = self.size(); //just in case
+        if *mctr >= self.len() {
+            *mctr = self.len(); //just in case
         }
         tmp
     }
@@ -163,11 +163,16 @@ impl<T> PeekableBuffer<T>
         }
     }
 
+    /// Returns a new `PeekableBuffer` containing all elements from the range
+    /// `[from_inc, len() - 1]`, cloning the required elements into their
+    /// own iterable.
     pub fn slice_from(&self, from_inc: usize) -> PeekableBuffer<T> {
-        let f = self.compute_bounded_offset(from_inc as i64);
-        PeekableBuffer::new(&self.iter[f as usize..])
+        self.slice_between(from_inc, self.len())
     }
 
+    /// Returns a new `PeekableBuffer` containing all elements from the range
+    /// `[from_inc, to_exc - 1]`, cloning the required elements into their
+    /// own iterable.
     pub fn slice_between(&self, from_inc: usize, to_exc: usize) -> PeekableBuffer<T> {
         let f = self.compute_bounded_offset(from_inc as i64);
         let t = self.compute_bounded_offset(to_exc as i64);
@@ -175,7 +180,7 @@ impl<T> PeekableBuffer<T>
     }
 
     /// Computes current stream pointer position offset by integer `offset`
-    /// amount, returning the new position in the range `[-1, size()]`.
+    /// amount, returning the new position in the range `[-1, len()]`.
     ///
     /// Note: this function makes the assumption that `i128` contains the range
     /// `[-usize, usize]`.
@@ -194,11 +199,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_is_at_end() {
+        let elems = vec![1, 2, 3];
+        let mut stream = PeekableBuffer::new(&elems);
+        for _ in elems {
+            stream.advance();
+        }
+        assert!(stream.is_at_end());
+    }
+
+    #[test]
+    fn test_len() {
+        let elems = vec![1, 2, 3, 4];
+        let stream = PeekableBuffer::new(&elems);
+        assert_eq!(stream.len(), elems.len());
+    }
+
+    #[test]
     fn test_lookaround_peek_current() {
         let elems = vec![1, 2, 3];
         let mut stream = PeekableBuffer::new(&elems);
 
-        assert_eq!(stream.size(), 3);
+        assert_eq!(stream.len(), 3);
 
         // pointer at position 0
         assert!(!stream.is_at_end());
@@ -240,9 +262,9 @@ mod tests {
     }
 
     #[test]
-    fn test_shifting() {
+    fn test_shift_advance() {
         fn limit(stream: &mut PeekableBuffer<i64>) {
-            let offset_from_end = *stream.ctr.borrow_mut() as i64 - stream.size() as i64;
+            let offset_from_end = *stream.ctr.borrow_mut() as i64 - stream.len() as i64;
 
             // shift right
             stream.shift(i64::MAX);
@@ -268,9 +290,6 @@ mod tests {
 
         let elems = vec![1, 2, 3];
         let mut stream = PeekableBuffer::new(&elems);
-
-        assert_eq!(stream.size(), 3);
-
         for i in 1..=4 {
             assert_eq!(stream.pos(), (i - 1) as usize);
             limit(&mut stream);
@@ -279,11 +298,29 @@ mod tests {
     }
 
     #[test]
-    fn test_consume() {
+    fn test_set_pos() {
+        let elems = vec![1, 2, 3];
+        let mut stream = PeekableBuffer::new(&elems);
+        assert_eq!(stream.current(), Some(&1));
+        stream.set_pos(2);
+        assert_eq!(stream.current(), Some(&3));
+        stream.set_pos(1);
+        assert_eq!(stream.current(), Some(&2));
+        stream.set_pos(0);
+        assert_eq!(stream.current(), Some(&1));
+        stream.set_pos(3);
+        assert_eq!(stream.current(), None);
+        stream.set_pos(100);
+        assert_eq!(stream.current(), None);
+        assert!(stream.is_at_end());
+    }
+
+    #[test]
+    fn test_pos_consume() {
         let elems = vec![1, 2, 3];
         let mut stream = PeekableBuffer::new(&elems);
 
-        assert_eq!(stream.size(), 3);
+        assert_eq!(stream.len(), 3);
 
         assert_eq!(stream.pos(), 0);
         assert_eq!(stream.consume(), Some(&1));
@@ -303,7 +340,7 @@ mod tests {
         let elems = vec![1, 2, 3, 3, 4, 5];
         let mut stream = PeekableBuffer::new(&elems);
 
-        assert_eq!(stream.size(), 6);
+        assert_eq!(stream.len(), 6);
 
         let taken: Vec<&i64> = stream.take_while(|&i| i < 4).collect();
         assert_eq!(taken, vec![&1, &2, &3, &3]);
@@ -319,7 +356,7 @@ mod tests {
         let elems = vec![1, 2, 3, 4, 5];
         let mut stream = PeekableBuffer::new(&elems);
 
-        assert_eq!(stream.size(), 5);
+        assert_eq!(stream.len(), 5);
 
         let taken: Vec<&i64> = stream.take_while(|&i| i < 10).collect();
         assert_eq!(taken, vec![&1, &2, &3, &4, &5]);
@@ -336,7 +373,7 @@ mod tests {
         let elems = vec![1, 2, 3, 4, 5];
         let mut stream = PeekableBuffer::new(&elems);
 
-        assert_eq!(stream.size(), 5);
+        assert_eq!(stream.len(), 5);
 
         // at position 1
         stream.advance();
@@ -351,10 +388,10 @@ mod tests {
     }
 
     #[test]
-    fn test_take_n() {
+    fn test_take() {
         let elems = vec![1, 2, 3, 4, 5];
         let mut stream = PeekableBuffer::new(&elems);
-        assert_eq!(stream.size(), 5);
+        assert_eq!(stream.len(), 5);
 
         {
             let taken: Vec<&i64> = stream.take(0).collect();
@@ -391,5 +428,53 @@ mod tests {
             assert!(stream.pos() == 5);
             assert!(stream.is_at_end());
         }
+    }
+
+    #[test]
+    fn test_accept() {
+        let elems = vec![1, 2, 3];
+        let mut stream = PeekableBuffer::new(&elems);
+        assert!(stream.accept(|&x| x < 2));
+        stream.advance();
+        assert!(stream.accept(|&x| x == 2));
+        stream.advance();
+        assert!(stream.accept(|&x| x >= 3));
+        assert!(stream.accept(|&x| x != 3) == false);
+        stream.advance();
+        assert!(stream.accept(|&_| true) == false);
+    }
+
+    #[test]
+    pub fn slice_from() {
+        let elems = vec![1, 2, 3, 4, 5];
+        let stream = PeekableBuffer::new(&elems);
+        assert_eq!(stream.slice_from(0), PeekableBuffer::new(&vec![1, 2, 3, 4, 5]));
+        assert_eq!(stream.slice_from(1), PeekableBuffer::new(&vec![2, 3, 4, 5]));
+        assert_eq!(stream.slice_from(4), PeekableBuffer::new(&vec![5]));
+        assert_eq!(stream.slice_from(5), PeekableBuffer::new(&vec![]));
+    }
+
+    #[test]
+    pub fn slice_between() {
+        let elems = vec![1, 2, 3, 4, 5];
+        let stream = PeekableBuffer::new(&elems);
+
+        //to len()
+        assert_eq!(stream.slice_between(0, 5), PeekableBuffer::new(&vec![1, 2, 3, 4, 5]));
+        assert_eq!(stream.slice_between(1, 5), PeekableBuffer::new(&vec![2, 3, 4, 5]));
+        assert_eq!(stream.slice_between(4, 5), PeekableBuffer::new(&vec![5]));
+        assert_eq!(stream.slice_between(5, 5), PeekableBuffer::new(&vec![]));
+
+        //to >len()
+        assert_eq!(stream.slice_between(0, 10), PeekableBuffer::new(&vec![1, 2, 3, 4, 5]));
+        assert_eq!(stream.slice_between(1, 10), PeekableBuffer::new(&vec![2, 3, 4, 5]));
+        assert_eq!(stream.slice_between(4, 10), PeekableBuffer::new(&vec![5]));
+        assert_eq!(stream.slice_between(5, 10), PeekableBuffer::new(&vec![]));
+
+        //in between
+        assert_eq!(stream.slice_between(0, 1), PeekableBuffer::new(&vec![1]));
+        assert_eq!(stream.slice_between(1, 3), PeekableBuffer::new(&vec![2, 3]));
+        assert_eq!(stream.slice_between(2, 4), PeekableBuffer::new(&vec![3, 4]));
+        assert_eq!(stream.slice_between(3, 5), PeekableBuffer::new(&vec![4, 5]));
     }
 }
