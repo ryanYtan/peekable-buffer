@@ -165,18 +165,25 @@ impl<T> PeekableBuffer<T>
 
     /// Returns a new `PeekableBuffer` containing all elements from the range
     /// `[from_inc, len() - 1]`, cloning the required elements into their
-    /// own iterable.
+    /// own iterable. If `from_inc` is outside the range of the stream, an
+    /// empty `PeekableBuffer` is returned.
     pub fn slice_from(&self, from_inc: usize) -> PeekableBuffer<T> {
-        self.slice_between(from_inc, self.len())
+        self.slice_between(from_inc, usize::MAX)
     }
 
     /// Returns a new `PeekableBuffer` containing all elements from the range
     /// `[from_inc, to_exc - 1]`, cloning the required elements into their
-    /// own iterable.
+    /// own iterable. If `from_inc > to_exc`, this function will panic.
+    /// Otherwise, if `from_inc` is greater than `len()`, an empty
+    /// `PeekableBuffer` is returned. If `from_inc == to_exc`, an empty
+    /// `PeekableBuffer` is returned as well.
     pub fn slice_between(&self, from_inc: usize, to_exc: usize) -> PeekableBuffer<T> {
-        let f = self.compute_bounded_offset(from_inc as i64);
-        let t = self.compute_bounded_offset(to_exc as i64);
-        PeekableBuffer::new(&self.iter[f as usize..t as usize])
+        if from_inc > to_exc {
+            panic!("from_inc={} greater than to_exc{}", from_inc, to_exc);
+        }
+        let a: usize = std::cmp::min(self.len(), from_inc);
+        let b: usize = std::cmp::min(self.len(), to_exc);
+        PeekableBuffer::new(&self.iter[a..b])
     }
 
     /// Computes current stream pointer position offset by integer `offset`
@@ -445,17 +452,18 @@ mod tests {
     }
 
     #[test]
-    pub fn slice_from() {
+    pub fn test_slice_from() {
         let elems = vec![1, 2, 3, 4, 5];
         let stream = PeekableBuffer::new(&elems);
         assert_eq!(stream.slice_from(0), PeekableBuffer::new(&vec![1, 2, 3, 4, 5]));
         assert_eq!(stream.slice_from(1), PeekableBuffer::new(&vec![2, 3, 4, 5]));
         assert_eq!(stream.slice_from(4), PeekableBuffer::new(&vec![5]));
         assert_eq!(stream.slice_from(5), PeekableBuffer::new(&vec![]));
+        assert_eq!(stream.slice_from(10), PeekableBuffer::new(&vec![]));
     }
 
     #[test]
-    pub fn slice_between() {
+    pub fn test_slice_between() {
         let elems = vec![1, 2, 3, 4, 5];
         let stream = PeekableBuffer::new(&elems);
 
@@ -476,5 +484,45 @@ mod tests {
         assert_eq!(stream.slice_between(1, 3), PeekableBuffer::new(&vec![2, 3]));
         assert_eq!(stream.slice_between(2, 4), PeekableBuffer::new(&vec![3, 4]));
         assert_eq!(stream.slice_between(3, 5), PeekableBuffer::new(&vec![4, 5]));
+        assert_eq!(stream.slice_between(1, 1), PeekableBuffer::new(&vec![]));
+        assert_eq!(stream.slice_between(3, 3), PeekableBuffer::new(&vec![]));
+        assert_eq!(stream.slice_between(10, 10), PeekableBuffer::new(&vec![]));
+
+        //complete outside the range
+        assert_eq!(stream.slice_between(10, 20), PeekableBuffer::new(&vec![]));
+    }
+
+    #[test]
+    #[should_panic]
+    pub fn test_slice_between_panicking() {
+        let elems = vec![1, 2, 3, 4, 5];
+        let stream = PeekableBuffer::new(&elems);
+        assert_eq!(stream.slice_between(20, 1), PeekableBuffer::new(&vec![]));
+        assert_eq!(stream.slice_between(2, 1), PeekableBuffer::new(&vec![]));
+        assert_eq!(stream.slice_between(20, 10), PeekableBuffer::new(&vec![]));
+    }
+
+    #[test]
+    pub fn test_readme_example() {
+        let v = vec![1, 2, 3, 4, 5];
+        let mut stream = PeekableBuffer::new(&v);
+
+        assert!(!stream.is_at_end());
+        assert_eq!(stream.pos(), 0);
+        assert_eq!(stream.current(), Some(&1));
+
+        stream.advance();
+        assert_eq!(stream.pos(), 1);
+        assert_eq!(stream.current(), Some(&2));
+
+        assert_eq!(stream.lookaround(-1), Some(&1));
+        assert_eq!(stream.lookaround(-10), None);
+
+        stream.shift(3);
+        assert_eq!(stream.current(), Some(&5));
+
+        assert_eq!(stream.consume(), Some(&5));
+        assert!(stream.is_at_end());
+        assert_eq!(stream.current(), None);
     }
 }
