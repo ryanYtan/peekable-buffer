@@ -1,4 +1,8 @@
 [package]
 name = "peekable-buffer"
+description = "Buffer with a cursor"
 version = "1.0.0"
 edition = "2021"
+repository = "https://github.com/ryanYtan/peekable-buffer"
+readme = "README.md"
+license = "MIT OR Apache-2.0"

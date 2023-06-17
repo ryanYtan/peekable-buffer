@@ -10,7 +10,7 @@ buffer.
 In `Cargo.toml`
 ```
 [dependencies]
-peekable_buffer = "0.1.0"
+peekable_buffer = "1.0.0"
 ```
 
 Create a `PeekableBuffer<T>` using
