@@ -22,7 +22,7 @@ impl<T> IntoIterator for PeekableBuffer<T>
 impl<T> PeekableBuffer<T>
     where T: Clone
 {
-    /// Creates a `Stream` object that owns all elements of `&[T]` via cloning.
+    /// Creates a `PeekableBuffer` object that owns all elements of `&[T]` via cloning.
     pub fn new<E>(elements: E) -> Self
         where E: AsRef<[T]>
     {
@@ -44,7 +44,7 @@ impl<T> PeekableBuffer<T>
     }
 
     /// Returns a reference to the element `offset` positions away from the
-    /// element currently being pointed to by the stream pointer. If the
+    /// element currently being pointed to by the cursor. If the
     /// computed offset is outside the bounds of the stream, `None` is returned.
     pub fn lookaround(&self, offset: i64) -> Option<&T> {
         let i = self.compute_bounded_offset(offset);
@@ -56,22 +56,22 @@ impl<T> PeekableBuffer<T>
     }
 
     /// Returns a reference to the element just after the element currently
-    /// being pointed to by the stream pointer. This is equivalent to calling
+    /// being pointed to by the cursor. This is equivalent to calling
     /// `lookaround(1)`.
     pub fn peek(&self) -> Option<&T> {
         self.lookaround(1)
     }
 
     /// Returns a reference to the element currently being pointed to by the
-    /// stream pointer. This is equivalent to calling `lookaround(0)`.
+    /// cursor. This is equivalent to calling `lookaround(0)`.
     pub fn current(&self) -> Option<&T> {
         self.lookaround(0)
     }
 
-    /// Shifts the stream pointer by `offset` positions. The computed offset
+    /// Shifts the cursor by `offset` positions. The computed offset
     /// will be within the range `[0, len()]`. If the computed offset is less
-    /// than 0, the stream pointer will point to the first element. If the
-    /// computed offset is greater than `len() - 1`, the stream pointer will
+    /// than 0, the cursor will point to the first element. If the
+    /// computed offset is greater than `len() - 1`, the cursor will
     /// point to the end and `is_at_end()` returns true.
     pub fn shift(&mut self, offset: i64) -> () {
         let i = self.compute_bounded_offset(offset);
@@ -82,30 +82,30 @@ impl<T> PeekableBuffer<T>
         }
     }
 
-    /// A convenience method that advances the stream pointer by 1. If the
+    /// A convenience method that advances the cursor by 1. If the
     /// stream is at the end, no action is taken. This is equivalent to calling
     /// `shift(1)`.
     pub fn advance(&mut self) -> () {
         self.shift(1);
     }
 
-    /// Sets the zero-indexed position of the stream pointer. If the
+    /// Sets the zero-indexed position of the cursor. If the
     /// given `pos` is outside of the range of the stream length, the
-    /// stream pointer will be set to `len()`.
+    /// cursor will be set to `len()`.
     pub fn set_pos(&mut self, pos: usize) -> usize {
         let i = std::cmp::min(pos, self.iter.len());
         *self.ctr.borrow_mut() = i;
         i
     }
 
-    /// Returns the current zero-indexed position of the stream pointer. The
+    /// Returns the current zero-indexed position of the cursor. The
     /// returned value is in the range `[0, len()]`.
     pub fn pos(&self) -> usize {
         *self.ctr.borrow_mut()
     }
 
     /// Returns a reference to the element currently being pointed to by the
-    /// stream pointer, then advances the pointer by 1.
+    /// cursor, then advances the pointer by 1.
     pub fn consume(&mut self) -> Option<&T> {
         let tmp = self.current();
         let mut mctr = self.ctr.borrow_mut();
@@ -133,7 +133,7 @@ impl<T> PeekableBuffer<T>
     }
 
     /// Returns an iterator containing all elements in the range
-    /// `[pos(), pos() + n)`. The stream pointer will point to either the
+    /// `[pos(), pos() + n)`. The cursor will point to either the
     /// end of the stream, or the element at `pos() + n`, whichever is
     /// first. If `pos() + n` is outside the bounds of the stream, then
     /// the rest of the stream is consumed and `is_at_end()` returns true.
@@ -186,7 +186,7 @@ impl<T> PeekableBuffer<T>
         PeekableBuffer::new(&self.iter[a..b])
     }
 
-    /// Computes current stream pointer position offset by integer `offset`
+    /// Computes current cursor position offset by integer `offset`
     /// amount, returning the new position in the range `[-1, len()]`.
     ///
     /// Note: this function makes the assumption that `i128` contains the range
